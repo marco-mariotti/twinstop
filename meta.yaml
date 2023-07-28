@@ -1,0 +1,47 @@
+package:
+  name:    {{ name }}
+  version: {{ version }}
+  
+source:
+  url: "https://pypi.io/packages/source/{{ name[0] }}/{{ name }}/{{ name }}-{{ version }}.tar.gz"
+
+
+build:
+  number: 0
+  noarch: python
+  entry_points:
+    - twinstop = twinstop:run_twinstop
+  script: "{{ PYTHON }} -m pip install . -vv"
+
+requirements:
+  host:
+    - pip
+    - python >=3.7
+  run:
+    - python >=3.7
+    - biopython >=1.78, <=1.81
+    - blast >=2.12.0
+    - easyterm >=1.0.0
+    - easybioinfo >=0.2.1
+    - extend_orfs_pyranges >=0.1.5
+    - file_chunk_iterators >=0.0.1
+    - pyranges >=0.0.120
+    - pandas >=1.3.5
+    - multiprocess >=0.70.14
+    - numpy >=1.21.5
+    - mafft >=7.505
+    - scikit-learn >=1.3.0
+    - pyfaidx >=0.7.2
+
+about:
+  home: "https://github.com/marco-mariotti/{{ name }}"
+  license: MIT
+  license_family: MIT
+  license_file: 
+  summary: "Twinstop identifies selenoproteins in close related transcriptomes"
+  doc_url: 
+  dev_url: 
+
+extra:
+  recipe-maintainers:
+    - marco-mariotti

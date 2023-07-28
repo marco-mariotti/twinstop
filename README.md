@@ -1,5 +1,14 @@
 # twinstop
 Twinstop identifies selenoproteins in close related transcriptomes
 
+# Installation
+conda install -c conda-forge -c bioconda -c mmariotti    twinstop
+
+# Usage
+Run:
+
+  twinstop -h
+
+
 # Authors
-Marco Mariotti and Sergio Sanchez Moragues
+Sergio Sanchez Moragues and Marco Mariotti
