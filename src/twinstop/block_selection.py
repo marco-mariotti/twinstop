@@ -1,11 +1,14 @@
 # -*- coding: utf-8 -*-
 
 import os
-twinstop_libpath=os.path.dirname(os.path.realpath(__file__)) +"/data_files/"
+
+twinstop_libpath = os.path.dirname(os.path.realpath(__file__)) + "/data_files/"
+
+
 def block_dict(query_seq, subj_seq, dictionary):
-    '''
-    Takes two protein sequences (one from the query and the other from the subject), 
-    divides them into blocks according to the stops '*' present in both and then 
+    """
+    Takes two protein sequences (one from the query and the other from the subject),
+    divides them into blocks according to the stops '*' present in both and then
     saves in a list of dictionaries the start, end and score (matrix Blosum62)
     of each block. Afterward, the block with better score is selected and the
     data of the score, start, end and sequence from both query and subject is
@@ -24,9 +27,9 @@ def block_dict(query_seq, subj_seq, dictionary):
     -------
     best_block[0] : Dictionary with the 'Start', 'End' and 'Score' values of the
     best scored fragment of each alignment.
-    '''
+    """
 
-    list_stops = list() # create a list to save stops index
+    list_stops = list()  # create a list to save stops index
 
     for index, x in enumerate(query_seq):
         # we count the start and the end of the sequence always as stops
@@ -35,30 +38,35 @@ def block_dict(query_seq, subj_seq, dictionary):
             list_stops.append(index)
             continue
         # save all the indexes of stops
-        if x == '*' or subj_seq[index] == '*':
+        if x == "*" or subj_seq[index] == "*":
             list_stops.append(index)
 
-    block_dict_list = list() # creates a list
+    block_dict_list = list()  # creates a list
     for idx, x in enumerate(list_stops):
         if x == list_stops[-1]:
-            break # necessary to skip an error
-        block_dict = dict() # creates a dictionary
+            break  # necessary to skip an error
+        block_dict = dict()  # creates a dictionary
         # we skip the 1st and last index of the fragments (stops)
         ######################################
         #### MM: never scoring the first and last position --> fix it
-        block_dict['Align_Start'] = x + 1
-        block_dict['Align_End'] = list_stops[idx + 1]
-        block_dict['Score'] = score(query_seq[x: list_stops[idx + 1]], subj_seq[x: list_stops[idx + 1]], dictionary)
-        block_dict_list.append(block_dict) # create a list of dictionaries
+        block_dict["Align_Start"] = x + 1
+        block_dict["Align_End"] = list_stops[idx + 1]
+        block_dict["Score"] = score(
+            query_seq[x : list_stops[idx + 1]],
+            subj_seq[x : list_stops[idx + 1]],
+            dictionary,
+        )
+        block_dict_list.append(block_dict)  # create a list of dictionaries
     # dictionaries of each alignment are sorted by 'Score'
     # reverse=True to have the best scored one at the beginning
     # lambda input: output
-    best_block = sorted(block_dict_list, key=lambda x: x['Score'], reverse=True)
+    best_block = sorted(block_dict_list, key=lambda x: x["Score"], reverse=True)
 
-    return best_block[0] # return the dictionary with the values of the best fragment 
+    return best_block[0]  # return the dictionary with the values of the best fragment
+
 
 def score(query_frag, subj_frag, dictionary):
-    '''
+    """
     Calculates the score using matrix Blosum62
 
     Parameters
@@ -74,32 +82,33 @@ def score(query_frag, subj_frag, dictionary):
     -------
     Score : Int
         Value according to matrix Blosum62
-    '''
+    """
 
     score = 0
     for index, x in enumerate(query_frag):
-        if x == '-' or subj_frag[index] == '-':
+        if x == "-" or subj_frag[index] == "-":
             continue
         score += dictionary[(x, subj_frag[index])]
 
     return score
 
+
 def dictionary_seleno():
-    '''
+    """
     Creates a dictionary of tuples with the values of the BLOSUM62 Matrix.
 
     Returns
     -------
     dictionary_sel : <dict>
         Dictionary of tuples with the values of the BLOSUM62 Matrix.
-    '''
+    """
 
     dictionary_sel = dict()
 
-    with open(twinstop_libpath+'Matrix_BLOSUM62sel.txt', 'r') as fr:
+    with open(twinstop_libpath + "Matrix_BLOSUM62sel.txt", "r") as fr:
         for index, row in enumerate(fr):
             # creates a list, using ' ' as sep.
-            spt = row.split(' ')
+            spt = row.split(" ")
             # deletes blank spaces.
             spt = list(filter(None, spt))
             if index == 0:
