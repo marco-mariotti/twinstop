@@ -3069,7 +3069,7 @@ def main():
 
         if not os.path.exists(subj_file+'.nin'):
             write('The subject file is not formatted for blast! Running makeblastdb')
-            cmd_makeblastdb = "makeblastdb -in " + subj_file+ + " -dbtype nucl"
+            cmd_makeblastdb = "makeblastdb -in " + subj_file + " -dbtype nucl"
             cmd_makeblastdb_list = shlex.split(cmd_makeblastdb)
             # subprocess.run allows to execute external programs inside a Python code
             y = subprocess.run(cmd_makeblastdb_list, capture_output=True)
