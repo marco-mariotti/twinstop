@@ -134,6 +134,10 @@ def mafft(joined_df):
 #
 #     return results
 
+def chunkify(df, n):
+    """Split DataFrame into n chunks."""
+    k, m = divmod(len(df), n)
+    return (df.iloc[i * k + min(i, m) : (i + 1) * k + min(i + 1, m)] for i in range(n))
 
 def multiprocessing(chunkdf, func, n_cpu, timeout):
     with mp.Pool(processes=n_cpu) as pool:
@@ -141,7 +145,7 @@ def multiprocessing(chunkdf, func, n_cpu, timeout):
         # shared_list = manager.list()
         results = []
         completed_results = []
-        for row in np.array_split(chunkdf, len(chunkdf)):
+        for row in chunkify(chunkdf, len(chunkdf)):
             result = pool.apply_async(func, args=(row,))
             results.append(result)
         for result in results:
