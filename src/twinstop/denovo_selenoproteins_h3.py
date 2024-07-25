@@ -181,8 +181,8 @@ from easyterm import (
     write,
     CommandLineOptions,
 )
-from easybioinfo import count_coding_changes, count_coding_sites, translate
-from orf_tools import extend_orfs
+from easybioinfo import count_coding_changes, count_coding_sites
+#from orf_tools import extend_orfs
 from file_chunk_iterators import (
     iterate_file_in_chunks,
     iterate_file_in_chunks_with_key,
@@ -627,7 +627,7 @@ def run_extend(chunk, path_query_file, path_subj_file):
     # splits DataFrame in query and subject DataFrames.
     query_df, subj_df = query_subject_dfs(chunk)
 
-    query_df = extend_orfs(
+    query_df = pr.orfs.extend_orfs(
         p=query_df,
         fasta_path=path_query_file,
         keep_off_bounds=True,
@@ -635,7 +635,7 @@ def run_extend(chunk, path_query_file, path_subj_file):
         stops=["TAG", "TAA"],
         chunk_size=1800,
     )
-    subj_df = extend_orfs(
+    subj_df = pr.orfs.extend_orfs(
         p=subj_df,
         fasta_path=path_subj_file,
         keep_off_bounds=True,
@@ -644,21 +644,21 @@ def run_extend(chunk, path_query_file, path_subj_file):
         chunk_size=1800,
     )
     # we need to get the protein sequences for the extended sequences.
-    query_df, subj_df = get_cds_prot_seq(
+    query_pr, subj_pr = get_cds_prot_seq(
         subj_df, query_df, path_subj_file, path_query_file, CDS_sequences=True
     )
 
     # renames the PyRanges-format query columns to merge both query/subj DataFrames.
-    query_df = query_df.rename(
-        columns={
-            "Chromosome": "Q_ID",
-            "Start": "Q_align_s",
-            "End": "Q_align_e",
-            "Strand": "Q_Strand",
-        }
-    )
+    query_pr = query_pr.rename(columns={"Strand": "Q_Strand"})
+    query_df = chunk[["ID", "Q_ID", "Q_align_s", "Q_align_e", "Q_fr"]]
+    print(query_df)
+    query_df = pd.concat([query_df, query_pr[["Q_Strand", "Query_CDS", "Q_align_prot_seq"]]], axis=1)
+    query_pr = pr.PyRanges(query_df)
+    print(query_pr)
+
+
     # merges both DataFrames by 'ID' column.
-    joined_df = subj_df.merge(query_df.set_index(["ID"]), on="ID")
+    joined_df = subj_pr.merge(query_pr.set_index(["ID"]), on="ID")
     # print(f'joined_df_1: {joined_df.columns}')
     # print(f'joined_df_1:\n{joined_df}')
 
@@ -788,40 +788,47 @@ def query_subject_dfs(df):
 
     # write('Dividing columns into query and subject dataframes')
     # df.copy() is deep=True by default
-    query_df = df.copy(deep=True)
+    #query_df = df.copy(deep=True)
+    query_df = df[["ID", "Q_ID", "Q_align_s", "Q_align_e", "Q_fr", "Q_align_prot_seq"]]
     # drops the query-related columns.
     subj_df = df.drop(
-        ["Q_ID", "Q_align_s", "Q_align_e", "Q_fr", "Q_align_prot_seq"], axis=1
-    )
+        columns=["Q_ID", "Q_align_s", "Q_align_e", "Q_fr", "Q_align_prot_seq"], axis=1)
+    #     ["Q_ID", "Q_align_s", "Q_align_e", "Q_fr", "Q_align_prot_seq"], axis=1
+    # )
+    del df
     # write('Dropping Query columns in subject df')
     # drops the subject-related columns ('Score' and 'Evalue' are left in the subj_table).
     # write('Dropping Subject columns in query df')
-    query_df.drop(
-        [
-            "Chromosome",
-            "Start",
-            "End",
-            "Subj_fr",
-            "Strand",
-            "Subj_align_prot_seq",
-            "Score",
-            "Evalue",
-        ],
-        axis=1,
-        inplace=True,
-    )
+    # query_df.drop(
+    #     [
+    #         "Chromosome",
+    #         "Start",
+    #         "End",
+    #         "Subj_fr",
+    #         "Strand",
+    #         "Subj_align_prot_seq",
+    #         "Score",
+    #         "Evalue",
+    #     ],
+    #     axis=1,
+    #     inplace=True,
+    # )
     # renames the columns to fit in the Pyranges format (Chromosome, Start, End, Strand (+/-)).
     query_df = query_df.rename(
         columns={"Q_ID": "Chromosome", "Q_align_s": "Start", "Q_align_e": "End"}
     )
+    query_df["Strand"] = np.where(query_df["Q_fr"] > 0, "+", "-")
+
+    query_pr = pr.PyRanges(query_df)
+    subj_pr = pr.PyRanges(subj_df)
+
     # write('Renaming Query columns in query df, PyRanges format')
     # query_df["Strand"] = query_df["Q_fr"].copy(deep=True)
     # # Strand column needs to have '+' or '-' only.
     # query_df["Strand"] = (query_df["Strand"] > 0).replace({True: "+", False: "-"})
     # write('Strand column created for query')
-    query_df["Strand"] = np.where(query_df["Q_fr"] > 0, "+", "-")
 
-    return query_df, subj_df
+    return query_pr, subj_pr
 
 
 def join_dfs(chunk_df, path_subj_file, path_query_file):
@@ -849,37 +856,47 @@ def join_dfs(chunk_df, path_subj_file, path_query_file):
     query_df, subject_df = pandas(chunk_df)
     # write('Returning query and subject dataframes')
     del chunk_df
-    query_df, subject_df = get_cds_prot_seq(
+    query_pr, subject_pr = get_cds_prot_seq(
         subject_df, query_df, path_subj_file, path_query_file
     )
-    query_df.drop(["Strand"], axis=1, inplace=True)
+    del subject_df, query_df
+    #query_df.drop(["Strand"], axis=1, inplace=True)
     # we need to rename query's columns before joining back the two dataframes.
-    query_df = query_df.rename(
-        columns={"Chromosome": "Q_ID", "Start": "Q_align_s", "End": "Q_align_e"}
-    )
+    # query_df = query_df.rename(
+    #     columns={"Chromosome": "Q_ID", "Start": "Q_align_s", "End": "Q_align_e"}
+    # )
     # joins subject and query DataFrames by ID column.
     # set_index() drop=True by default.
-    joined_df = subject_df.join(query_df.set_index("ID"), on="ID")
-    del subject_df, query_df
-    joined_df = joined_df.reindex(
-        columns=[
-            "ID",
-            "Chromosome",
-            "Start",
-            "End",
-            "Subj_fr",
-            "Strand",
-            "Q_ID",
-            "Q_align_s",
-            "Q_align_e",
-            "Q_fr",
-            "Score",
-            "Evalue",
-            "Subj_align_prot_seq",
-            "Q_align_prot_seq",
-        ]
-    )
-    joined_df.sort_values(by="ID", inplace=True, ignore_index=True)
+
+    joined_df = subject_pr.join(query_pr.set_index('ID'), on='ID', rsuffix='_Query')
+    # joined_df = subject_df.join(query_df.set_index("ID"), on="ID")    
+    # del subject_df, query_df
+    # joined_df = joined_df.reindex(
+    #     columns=[
+    #         "ID",
+    #         "Chromosome",
+    #         "Start",
+    #         "End",
+    #         "Subj_fr",
+    #         "Strand",
+    #         "Q_ID",
+    #         "Q_align_s",
+    #         "Q_align_e",
+    #         "Q_fr",
+    #         "Score",
+    #         "Evalue",
+    #         "Subj_align_prot_seq",
+    #         "Q_align_prot_seq",
+    #     ]
+    # )
+    #joined_df.sort_values(by="ID", inplace=True, ignore_index=True)
+    joined_df = joined_df.rename(columns={'Chromosome_Subj': 'Chromosome',
+                                          'Start_Subj': 'Start',
+                                          'End_Subj': 'End',
+                                          'Chromosome_Query': 'Q_ID',
+                                          'Start_Query': 'Q_align_s',
+                                          'End_Query': 'Q_align_e',
+                                          'Strand_Query': 'Q_Strand'})
 
     return joined_df
 
@@ -1006,7 +1023,7 @@ def overlapping_filter(fragments_df, n_cpu):
 
     Returns
     -------
-    clusters_df : <pd.DataFrame>
+    clusters_pr : <pd.DataFrame>
         DataFrame with the best scored ORFs per query/subj transcripts pair.
     """
     # write(f'Overlapping')
@@ -1030,19 +1047,20 @@ def overlapping_filter(fragments_df, n_cpu):
     )
     del qsf_score
     # creates a 'Cluster' column identifying the overlapping sequences
-    clusters_pr = pr.PyRanges(fragments_df).cluster(strand=False, slack=0, nb_cpu=n_cpu)
+    #clusters_pr = pr.PyRanges(fragments_df).cluster(strand=False, slack=0, nb_cpu=n_cpu)
+    clusters_pr = pr.PyRanges(fragments_df).cluster(use_strand=False)
     del fragments_df
-    clusters_df = clusters_pr.as_df()
-    del clusters_pr
-    clusters_df = (
-        clusters_df.sort_values(by="Score", ascending=False)
+    #clusters_df = clusters_pr.as_df()
+    #del clusters_pr
+    clusters_pr = (
+        clusters_pr.sort_values(by="Score", ascending=False)
         .groupby("Cluster", as_index=False, observed=False)
         .first()
     )
-    clusters_df.drop("Cluster", axis=1, inplace=True)
+    clusters_pr.drop("Cluster", axis=1, inplace=True)
     # clusters_df['Start'] = clusters_df['Start'] + 1
     # clusters_df['Q_align_s'] = clusters_df['Q_align_s'] + 1
-    clusters_df = clusters_df.reindex(
+    clusters_pr = clusters_pr.reindex(
         columns=[
             "ID",
             "Chromosome",
@@ -1061,11 +1079,11 @@ def overlapping_filter(fragments_df, n_cpu):
         ]
     )
 
-    return clusters_df
+    return clusters_pr
 
 
 def get_cds_prot_seq(
-    subj_df, query_df, path_subj_file, path_query_file, CDS_sequences=False
+    subj_pr, query_pr, path_subj_file, path_query_file, CDS_sequences=False
 ):
     """
     This function extracts the nucleotide sequences of the hits and
@@ -1095,37 +1113,55 @@ def get_cds_prot_seq(
 
     # write('Converting subject and query dataframes into PyRanges objects')
     # converts into PyRanges.
-    query_pr = pr.PyRanges(query_df)
-    subj_pr = pr.PyRanges(subj_df)
-    del query_df, subj_df
+    #query_pr = pr.PyRanges(query_df)
+    #subj_pr = pr.PyRanges(subj_df)
+    #del query_df, subj_df
     # write('Translating into protein')
     if CDS_sequences:
-        # gets the CDS sequences.
-        query_pr.Query_CDS = pr.get_sequence(query_pr, path=path_query_file)
-        query_pr.Q_align_prot_seq = [
-            translate(s, genetic_code="1+U", cache=True) for s in query_pr.Query_CDS
+        query_pr["Query_CDS"] = query_pr.get_sequence(path=path_query_file)
+        # print(query_pr.Query_CDS)
+        query_pr["Q_align_prot_seq"] = [
+            pr.seqs.translate(s, genetic_code="1+U", cache=True)
+            for s in query_pr["Query_CDS"]
         ]
-        subj_pr.Subj_CDS = pr.get_sequence(subj_pr, path=path_subj_file)
-        subj_pr.Subj_align_prot_seq = [
-            translate(s, genetic_code="1+U", cache=True) for s in subj_pr.Subj_CDS
+        subj_pr["Subj_CDS"] = subj_pr.get_sequence(path=path_subj_file)
+        subj_pr["Subj_align_prot_seq"] = [
+            pr.seqs.translate(s, genetic_code="1+U", cache=True)
+            for s in subj_pr["Subj_CDS"]
         ]
-        # write('Nucleotide and protein sequences saved')
+
+        # # gets the CDS sequences.
+        # query_pr.Query_CDS = pr.get_sequence(query_pr, path=path_query_file)
+        # query_pr.Q_align_prot_seq = [
+        #     translate(s, genetic_code="1+U", cache=True) for s in query_pr.Query_CDS
+        # ]
+        # subj_pr.Subj_CDS = pr.get_sequence(subj_pr, path=path_subj_file)
+        # subj_pr.Subj_align_prot_seq = [
+        #     translate(s, genetic_code="1+U", cache=True) for s in subj_pr.Subj_CDS
+        # ]
+        # # write('Nucleotide and protein sequences saved')
     else:
+        query_pr["Q_align_prot_seq"]  = pr.seqs.translate(
+            query_pr.get_sequence(path=path_query_file), genetic_code="1+U", cache=True)
+        subj_pr["Subj_align_prot_seq"] = pr.seqs.translate(
+            subj_pr.get_sequence(path=path_subj_file), genetic_code="1+U", cache=True)
+
+        
         # translates the CDS sequences into protein (using the 'U' for UGA-in-frame codons).
-        query_pr.Q_align_prot_seq = [
-            translate(s, genetic_code="1+U", cache=True)
-            for s in pr.get_sequence(query_pr, path=path_query_file)
-        ]
-        subj_pr.Subj_align_prot_seq = [
-            translate(s, genetic_code="1+U", cache=True)
-            for s in pr.get_sequence(subj_pr, path=path_subj_file)
-        ]
+        # query_pr.Q_align_prot_seq = [
+        #     translate(s, genetic_code="1+U", cache=True)
+        #     for s in pr.get_sequence(query_pr, path=path_query_file)
+        # ]
+        # subj_pr.Subj_align_prot_seq = [
+        #     translate(s, genetic_code="1+U", cache=True)
+        #     for s in pr.get_sequence(subj_pr, path=path_subj_file)
+        # ]
     # write('Protein sequences with Selenocysteine (U)')
     # converts into DataFrame
-    query_df = query_pr.as_df()
-    subj_df = subj_pr.as_df()
+    #query_df = query_pr.as_df()
+    #subj_df = subj_pr.as_df()
 
-    return query_df, subj_df
+    return query_pr, subj_pr
 
 
 def pairwise_alignment(extended_hits_df):
@@ -2053,7 +2089,7 @@ def dN_dS(row):
 
 
 def run_blastp(
-    selenocandidates_df, db_file, n_cpu, blastp_outfile, fasta_query_prot_seq
+    selenocandidates_df, db_file, n_cpu, blastp_outfile, fasta_prot_seq
 ):
     """
     This function runs blastp. Useful to annotate the candidates
@@ -2068,8 +2104,8 @@ def run_blastp(
         opt['c']
     blastp_outfile : <str>
         Path for the blastp outfile.
-    fasta_query_prot_seq : <str>
-        Path for the fasta file with all query protein sequences.
+    fasta_prot_seq : <str>
+        Path for the fasta file with all protein sequences.
 
     Raises
     ------
@@ -2090,17 +2126,17 @@ def run_blastp(
     #                                     ignore_index=True, keep='first')
 
     # creates a fasta file with the query protein sequences
-    with open(fasta_query_prot_seq, "w") as fw:
+    with open(fasta_prot_seq, "w") as fw:
         for i, row in selenocandidates_df.iterrows():
             # blasp alignments must be done with the sequences without the gaps
-            q_no_hypens = row["Q_align_prot_seq"].replace("-", "")
-            fw.write(f">{row['Q_ID']}\n")
-            fw.write(f"{q_no_hypens}\n")
-    # command to run blastp with the query, the database (UniRef50) and an outfile
+            s_no_hypens = row["Subj_align_prot_seq"].replace("-", "")
+            fw.write(f">{row['ID']}\n")
+            fw.write(f"{s_no_hypens}\n")
+    # command to run blastp with the subject, the database (UniRef50) and an outfile
     # -max_hsps option is to select a max nº of hits per query
     format_6_cmd = (
         "blastp -task blastp-fast -query "
-        + fasta_query_prot_seq
+        + fasta_prot_seq
         + " -db "
         + db_file
         + " -out "
@@ -2120,14 +2156,14 @@ def run_blastp(
         write(x.stderr, x.stdout)
         raise Exception()
 
-    os.remove(fasta_query_prot_seq)
+    os.remove(fasta_prot_seq)
     # creates a table DataFrame and names the columns
-    uniprot_IDs_df = pd.read_table(blastp_outfile, names=["Q_ID", "Annot_Title"])
-    uniprot_IDs_df = uniprot_IDs_df.groupby("Q_ID", as_index=False, observed=False).agg(
+    uniprot_IDs_df = pd.read_table(blastp_outfile, names=["ID", "Annot_Title"])
+    uniprot_IDs_df = uniprot_IDs_df.groupby("ID", as_index=False, observed=False).agg(
         {"Annot_Title": join_titles}
     )
-    selenocandidates_df = selenocandidates_df.join(
-        uniprot_IDs_df.set_index("Q_ID"), on="Q_ID"
+    selenocandidates_df = selenocandidates_df.merge(
+        uniprot_IDs_df, on="ID"
     )
 
     os.remove(blastp_outfile)
