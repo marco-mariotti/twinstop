@@ -19,7 +19,7 @@ requirements:
     - python >=3.12
   run:
     - python >=3.12
-    - biopython >=1.78, <=1.81
+    - biopython >=1.78
     - blast >=2.12.0
     - easyterm >=1.0.0
     - easybioinfo >=0.3.1

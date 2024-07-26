@@ -3389,13 +3389,6 @@ def main():
         # calling function
         candidates_df = UGA_alignments(aln_orfs)
 
-        # MM: replacing U with * except for target UGA; also updating score
-        # candidates_df[["Q_align_prot_seq", "Subj_align_prot_seq", "Score"]] = (
-        #     candidates_df[["Q_align_prot_seq", "Subj_align_prot_seq", "Score"]].apply(
-        #         replace_non_target_ugas, axis=1, result_type="expand"
-        #     )
-        # )
-
         # saving dataframe as a csv file
         candidates_df = candidates_df.sort_values(
             by="Score", ascending=False, ignore_index=True
@@ -3498,6 +3491,14 @@ def main():
         write(description_of_phases[7])
         selenocandidates_df = preprocessing_candidates(candidates_df, q_file, subj_file)
         del candidates_df
+
+        write(
+            f"> Table with candidates before final filter  --> {output_folder+'/selenocandidates.no_filter.tsv'}"
+        )
+
+        selenocandidates_df.to_csv(
+            path_or_buf='selenocandidates.no_filter.tsv', sep="\t", index=False
+        )
 
         if opt["model"] == "d":
             lr_filepath = twinstop_libpath + "logistic_regression_model.def.pkl"
