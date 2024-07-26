@@ -649,10 +649,12 @@ def run_extend(chunk, path_query_file, path_subj_file):
     )
 
     # renames the PyRanges-format query columns to merge both query/subj DataFrames.
-    query_pr = query_pr.rename(columns={"Strand": "Q_Strand"})
-    query_df = chunk[["ID", "Q_ID", "Q_align_s", "Q_align_e", "Q_fr"]]
+    #query_pr = query_pr.rename(columns={"Strand": "Q_Strand"})
+    query_pr = pd.DataFrame(query_pr).rename(columns={"Strand": "Q_Strand", "Start":"Q_align_s", "End":"Q_align_e"})
+    query_df = chunk[["ID", "Q_ID", "Q_fr"]]
     print(query_df)
-    query_df = pd.concat([query_df, query_pr[["Q_Strand", "Query_CDS", "Q_align_prot_seq"]]], axis=1)
+    #query_df = pd.concat([query_df, query_pr[["Q_Strand", "Query_CDS", "Q_align_prot_seq"]]], axis=1)
+    query_df = pd.concat([query_df, query_pr[["Q_Strand", "Query_CDS", "Q_align_prot_seq", "Q_align_s", "Q_align_e"]]], axis=1)
     query_pr = pr.PyRanges(query_df)
     print(query_pr)
 
@@ -1419,7 +1421,7 @@ def UGA_alignments(aligned_hits_df):
                                 "-", ""
                             )
                         )
-                        + 1
+                        # + 1
                     ) * 3
                     # print('U upstream query')
                     # print(f"row Q_align_prot_seq:\n {row['Q_align_prot_seq']}")
@@ -1468,16 +1470,25 @@ def UGA_alignments(aligned_hits_df):
                         * 3
                     ]
                     # print(f"row Subj_CDS:\n {row['Subj_CDS']}")
+
+                ### TEMP TEMP MM
+                list_bug=[] #809, 884, 869, 839, 854, 824, 779, 794, 1067, 461, 472, 495, 483, 1381, 932, 966, 149, 1229, 1231, 1225, 1233, 278]
+                if row["ID"] in (list_bug):
+                    write(row, how='blue')
+                    write(row.Subj_align_prot_seq.replace('-', ''), how='blue,reverse')
+
                 if len(list_up_subj) != 0:
+
+
                     subj_cu = (
                         len(
                             row["Subj_align_prot_seq"][: list_up_subj[-1]].replace(
                                 "-", ""
                             )
                         )
-                        + 1
+                        # + 1
                     ) * 3
-                    # print(f'subj_cu: {subj_cu}')
+                    #print(f'subj_cu: {subj_cu}')
                     # print('U upstream subject')
                     # print(f"row Subj_align_prot_seq:\n {row['Subj_align_prot_seq']}")
                     gaps_up = row["Subj_align_prot_seq"][: list_up_subj[-1] + 1].count(
@@ -1575,6 +1586,11 @@ def UGA_alignments(aligned_hits_df):
                         #     row['Q_align_s'] +
                         #     len(row['Q_align_prot_seq'][list_down_query[0] + 1:].replace('-', '')))
                         # print(f"row Q_align_s:\n {row['Q_align_s']}")
+
+                ### TEMP TEMP MM
+                if row["ID"] in (list_bug):
+                    write(row, how='magenta')
+                    write(row.Subj_align_prot_seq.replace('-', ''), how='magenta,reverse')
 
                 prot_seq_query = ""
                 prot_seq_subj = ""
@@ -1691,236 +1707,170 @@ def UGA_alignments(aligned_hits_df):
     return candidates
 
 
-def UGA_filter_each_row(row):
-    # write(row, how='green')
-    aligned = True
-    # first, we need to select the U responsible for readthrough
-    index_u = UGA(row["Q_align_prot_seq"], row["Subj_align_prot_seq"])
-    # filters candidates with at least one aligned 'U'
-    if not index_u is None:
-        # counts the number of U's in both protein sequences
-        n_stops_subj = row["Subj_align_prot_seq"].count("U")
-        n_stops_query = row["Q_align_prot_seq"].count("U")
-        # selenoproteins sequences usually contains only one UGA responsible
-        # for readthrough. So, candidates with several U's will be trimmed.
-        if n_stops_subj >= 2 or n_stops_query >= 2:
-            # then the others Us (if any) indexes are stored in four lists
-            (
-                list_up_query,
-                list_down_query,
-                list_up_subj,
-                list_down_subj,
-            ) = list_UGAs(row["Q_align_prot_seq"], row["Subj_align_prot_seq"], index_u)
-            # cuts protein/nucleotide sequences from the closest up/downstream U to the selected 'U'.
-            # first, we cut downstream not to change the length of the sequences in case
-            # we need to cut upstream too. Trimmed parts are replaced with gaps.
-            if len(list_down_query) != 0:
-                query_cd = (
-                    len(
-                        row["Q_align_prot_seq"][list_down_query[0] + 1 :].replace(
-                            "-", ""
-                        )
-                    )
-                    * 3
-                )
-                row["Q_align_prot_seq"] = row["Q_align_prot_seq"][
-                    : list_down_query[0] + 1
-                ] + "-" * (len(row["Q_align_prot_seq"]) - list_down_query[0] - 1)
-                row["Query_CDS"] = row["Query_CDS"][
-                    : (
-                        list_down_query[0]
-                        + 1
-                        - row["Q_align_prot_seq"][: list_down_query[0] + 1].count("-")
-                    )
-                    * 3
-                ]
-                # print(f"row Query_CDS:\n {row['Query_CDS']}")
-            if len(list_up_query) != 0:
-                query_cu = (
-                    len(row["Q_align_prot_seq"][: list_up_query[-1]].replace("-", ""))
-                    + 1
-                ) * 3
-                # print('U upstream query')
-                # print(f"row Q_align_prot_seq:\n {row['Q_align_prot_seq']}")
-                gaps_up = row["Q_align_prot_seq"][: list_up_query[-1] + 1].count("-")
-                row["Q_align_prot_seq"] = (
-                    "-" * (list_up_query[-1] + 1)
-                    + row["Q_align_prot_seq"][list_up_query[-1] + 1 :]
-                )
-                # print(f"row Q_align_prot_seq:\n {row['Q_align_prot_seq']}")
-                # print(f"row Query_CDS:\n {row['Query_CDS']}")
-                row["Query_CDS"] = row["Query_CDS"][
-                    (list_up_query[-1] + 1 - gaps_up) * 3 :
-                ]
-                # print(f"row Query_CDS:\n {row['Query_CDS']}")
-            if len(list_down_subj) != 0:
-                subj_cd = (
-                    len(
-                        row["Subj_align_prot_seq"][list_down_subj[0] + 1 :].replace(
-                            "-", ""
-                        )
-                    )
-                    * 3
-                )
-                # print(f'subj_cd: {subj_cd}')
-                # print('U downstream subject')
-                # print(f"row Subj_align_prot_seq:\n {row['Subj_align_prot_seq']}")
-                row["Subj_align_prot_seq"] = row["Subj_align_prot_seq"][
-                    : list_down_subj[0] + 1
-                ] + "-" * (len(row["Subj_align_prot_seq"]) - list_down_subj[0] - 1)
-                # print(f"row Subj_align_prot_seq:\n {row['Subj_align_prot_seq']}")
-                # print(f"row Subj_CDS:\n {row['Subj_CDS']}")
-                row["Subj_CDS"] = row["Subj_CDS"][
-                    : (
-                        list_down_subj[0]
-                        + 1
-                        - row["Subj_align_prot_seq"][: list_down_subj[0] + 1].count("-")
-                    )
-                    * 3
-                ]
-                # print(f"row Subj_CDS:\n {row['Subj_CDS']}")
-            if len(list_up_subj) != 0:
-                subj_cu = (
-                    len(row["Subj_align_prot_seq"][: list_up_subj[-1]].replace("-", ""))
-                    + 1
-                ) * 3
-                gaps_up = row["Subj_align_prot_seq"][: list_up_subj[-1] + 1].count("-")
-                row["Subj_align_prot_seq"] = (
-                    "-" * (list_up_subj[-1] + 1)
-                    + row["Subj_align_prot_seq"][list_up_subj[-1] + 1 :]
-                )
-                row["Subj_CDS"] = row["Subj_CDS"][
-                    (list_up_subj[-1] + 1 - gaps_up) * 3 :
-                ]
+# def UGA_filter_each_row(row):
+#     # write(row, how='green')
+#     aligned = True
+#     # first, we need to select the U responsible for readthrough
+#     index_u = UGA(row["Q_align_prot_seq"], row["Subj_align_prot_seq"])
+#     # filters candidates with at least one aligned 'U'
+#     if not index_u is None:
+#         # counts the number of U's in both protein sequences
+#         n_stops_subj = row["Subj_align_prot_seq"].count("U")
+#         n_stops_query = row["Q_align_prot_seq"].count("U")
+#         # selenoproteins sequences usually contains only one UGA responsible
+#         # for readthrough. So, candidates with several U's will be trimmed.
+#         if n_stops_subj >= 2 or n_stops_query >= 2:
+#             # then the others Us (if any) indexes are stored in four lists
+#             (
+#                 list_up_query,
+#                 list_down_query,
+#                 list_up_subj,
+#                 list_down_subj,
+#             ) = list_UGAs(row["Q_align_prot_seq"], row["Subj_align_prot_seq"], index_u)
+#             # cuts protein/nucleotide sequences from the closest up/downstream U to the selected 'U'.
+#             # first, we cut downstream not to change the length of the sequences in case
+#             # we need to cut upstream too. Trimmed parts are replaced with gaps.
+#             if len(list_down_query) != 0:
+#                 query_cd = (
+#                     len(
+#                         row["Q_align_prot_seq"][list_down_query[0] + 1 :].replace(
+#                             "-", ""
+#                         )
+#                     )
+#                     * 3
+#                 )
+#                 row["Q_align_prot_seq"] = row["Q_align_prot_seq"][
+#                     : list_down_query[0] + 1
+#                 ] + "-" * (len(row["Q_align_prot_seq"]) - list_down_query[0] - 1)
+#                 row["Query_CDS"] = row["Query_CDS"][
+#                     : (
+#                         list_down_query[0]
+#                         + 1
+#                         - row["Q_align_prot_seq"][: list_down_query[0] + 1].count("-")
+#                     )
+#                     * 3
+#                 ]
+#                 # print(f"row Query_CDS:\n {row['Query_CDS']}")
+#             if len(list_up_query) != 0:
+#                 query_cu = (
+#                     len(row["Q_align_prot_seq"][: list_up_query[-1]].replace("-", ""))
+#                     + 1
+#                 ) * 3
+#                 # print('U upstream query')
+#                 # print(f"row Q_align_prot_seq:\n {row['Q_align_prot_seq']}")
+#                 gaps_up = row["Q_align_prot_seq"][: list_up_query[-1] + 1].count("-")
+#                 row["Q_align_prot_seq"] = (
+#                     "-" * (list_up_query[-1] + 1)
+#                     + row["Q_align_prot_seq"][list_up_query[-1] + 1 :]
+#                 )
+#                 # print(f"row Q_align_prot_seq:\n {row['Q_align_prot_seq']}")
+#                 # print(f"row Query_CDS:\n {row['Query_CDS']}")
+#                 row["Query_CDS"] = row["Query_CDS"][
+#                     (list_up_query[-1] + 1 - gaps_up) * 3 :
+#                 ]
+#                 # print(f"row Query_CDS:\n {row['Query_CDS']}")
+#             if len(list_down_subj) != 0:
+#                 subj_cd = (
+#                     len(
+#                         row["Subj_align_prot_seq"][list_down_subj[0] + 1 :].replace(
+#                             "-", ""
+#                         )
+#                     )
+#                     * 3
+#                 )
+#                 # print(f'subj_cd: {subj_cd}')
+#                 # print('U downstream subject')
+#                 # print(f"row Subj_align_prot_seq:\n {row['Subj_align_prot_seq']}")
+#                 row["Subj_align_prot_seq"] = row["Subj_align_prot_seq"][
+#                     : list_down_subj[0] + 1
+#                 ] + "-" * (len(row["Subj_align_prot_seq"]) - list_down_subj[0] - 1)
+#                 # print(f"row Subj_align_prot_seq:\n {row['Subj_align_prot_seq']}")
+#                 # print(f"row Subj_CDS:\n {row['Subj_CDS']}")
+#                 row["Subj_CDS"] = row["Subj_CDS"][
+#                     : (
+#                         list_down_subj[0]
+#                         + 1
+#                         - row["Subj_align_prot_seq"][: list_down_subj[0] + 1].count("-")
+#                     )
+#                     * 3
+#                 ]
+#                 # print(f"row Subj_CDS:\n {row['Subj_CDS']}")
+#             if len(list_up_subj) != 0:
+#                 subj_cu = (
+#                     len(row["Subj_align_prot_seq"][: list_up_subj[-1]].replace("-", ""))
+#                     # + 1
+#                 ) * 3
+#                 gaps_up = row["Subj_align_prot_seq"][: list_up_subj[-1] + 1].count("-")
+#                 row["Subj_align_prot_seq"] = (
+#                     "-" * (list_up_subj[-1] + 1)
+#                     + row["Subj_align_prot_seq"][list_up_subj[-1] + 1 :]
+#                 )
+#                 row["Subj_CDS"] = row["Subj_CDS"][
+#                     (list_up_subj[-1] + 1 - gaps_up) * 3 :
+#                 ]
 
-            # updates the start/end positions according to strand value.
-            if len(list_up_subj) != 0:
-                # print('U upstream subject')
-                if row["Strand"] == "+":
-                    row["Start"] += subj_cu
-                else:
-                    row["End"] -= subj_cu
-            if len(list_down_subj) != 0:
-                if row["Strand"] == "+":
-                    row["End"] -= subj_cd
-                else:
-                    row["Start"] += subj_cd
+#             # updates the start/end positions according to strand value.
+#             if len(list_up_subj) != 0:
+#                 # print('U upstream subject')
+#                 if row["Strand"] == "+":
+#                     row["Start"] += subj_cu
+#                 else:
+#                     row["End"] -= subj_cu
+#             if len(list_down_subj) != 0:
+#                 if row["Strand"] == "+":
+#                     row["End"] -= subj_cd
+#                 else:
+#                     row["Start"] += subj_cd
 
-            if len(list_up_query) != 0:
-                # print('U upstream query')
-                if row["Q_Strand"] == "+":
-                    row["Q_align_s"] += query_cu
-                else:
-                    row["Q_align_e"] -= query_cu
-            if len(list_down_query) != 0:
-                # print('U downstream query')
-                if row["Q_Strand"] == "+":
-                    row["Q_align_e"] -= query_cd
-                else:
-                    row["Q_align_s"] += query_cd
+#             if len(list_up_query) != 0:
+#                 # print('U upstream query')
+#                 if row["Q_Strand"] == "+":
+#                     row["Q_align_s"] += query_cu
+#                 else:
+#                     row["Q_align_e"] -= query_cu
+#             if len(list_down_query) != 0:
+#                 # print('U downstream query')
+#                 if row["Q_Strand"] == "+":
+#                     row["Q_align_e"] -= query_cd
+#                 else:
+#                     row["Q_align_s"] += query_cd
 
-            prot_seq_query = ""
-            prot_seq_subj = ""
-            # deletes the non-sense gaps.
-            for idx, x in enumerate(row["Subj_align_prot_seq"]):
-                if x == "-" and row["Q_align_prot_seq"][idx] == "-":
-                    continue
-                else:
-                    prot_seq_query += row["Q_align_prot_seq"][idx]
-                    prot_seq_subj += x
+#             prot_seq_query = ""
+#             prot_seq_subj = ""
+#             # deletes the non-sense gaps.
+#             for idx, x in enumerate(row["Subj_align_prot_seq"]):
+#                 if x == "-" and row["Q_align_prot_seq"][idx] == "-":
+#                     continue
+#                 else:
+#                     prot_seq_query += row["Q_align_prot_seq"][idx]
+#                     prot_seq_subj += x
 
-            row["Q_align_prot_seq"] = prot_seq_query
-            row["Subj_align_prot_seq"] = prot_seq_subj
-            index_u = UGA(row["Q_align_prot_seq"], row["Subj_align_prot_seq"])
+#             row["Q_align_prot_seq"] = prot_seq_query
+#             row["Subj_align_prot_seq"] = prot_seq_subj
+#             index_u = UGA(row["Q_align_prot_seq"], row["Subj_align_prot_seq"])
 
-        # counts the nº of gaps in both sequences.
-        n_gaps_subj = row["Subj_align_prot_seq"][:index_u].count("-")
-        n_gaps_query = row["Q_align_prot_seq"][:index_u].count("-")
-        # when using cds sequences we need to subtract the number of gaps and multiply by 3.
-        # (1 aa = 3 nucleotides).
-        index_3t_nucl_subj = (index_u - n_gaps_subj) * 3
-        index_3t_nucl_query = (index_u - n_gaps_query) * 3
+#         # counts the nº of gaps in both sequences.
+#         n_gaps_subj = row["Subj_align_prot_seq"][:index_u].count("-")
+#         n_gaps_query = row["Q_align_prot_seq"][:index_u].count("-")
+#         # when using cds sequences we need to subtract the number of gaps and multiply by 3.
+#         # (1 aa = 3 nucleotides).
+#         index_3t_nucl_subj = (index_u - n_gaps_subj) * 3
+#         index_3t_nucl_query = (index_u - n_gaps_query) * 3
 
-        # filters only when the selected 'U' = 'TGA'.
-        if not (
-            (row["Subj_CDS"][index_3t_nucl_subj : index_3t_nucl_subj + 3] == "TGA")
-            and (
-                row["Query_CDS"][index_3t_nucl_query : index_3t_nucl_query + 3] == "TGA"
-            )
-        ):
-            raise SystemExit("Stop codon comparison did not match on:\n %s" % row)
-    else:
-        aligned = False
-    row["aligned"] = aligned
-    return row
+#         # filters only when the selected 'U' = 'TGA'.
+#         if not (
+#             (row["Subj_CDS"][index_3t_nucl_subj : index_3t_nucl_subj + 3] == "TGA")
+#             and (
+#                 row["Query_CDS"][index_3t_nucl_query : index_3t_nucl_query + 3] == "TGA"
+#             )
+#         ):
+#             raise SystemExit("Stop codon comparison did not match on:\n %s" % row)
+#     else:
+#         aligned = False
+#     row["aligned"] = aligned
+#     return row
 
 
-def UGA_filter(df):
-    """MM modified
-    Second filter of the script. During this filter, we will get only those hits
-    with aligned selenocysteines (U) and minimum values of conservation upstream
-    and downstream the in-frame-UGA.
-    Alignments with more than one aligned 'U' are cut to keep only one per hit.
-
-    Parameters
-    ----------
-    aligned_hits_df : <pd.DataFrame>
-        Dataframe with all the remaining hits.
-
-    Returns
-    -------
-    None
-        Modifies dataframe in place; also add column Aligned with boolean filter
-    """
-
-    df["aligned"] = False
-    edited_columns = "Q_align_s Q_align_e Start End Q_align_prot_seq Subj_align_prot_seq Query_CDS Subj_CDS".split()
-    df[edited_columns] = df.apply(UGA_filter_each_row, axis=1)[edited_columns]
-    return df
-
-    if debugging:
-        pretty_out = pretty_output(filtered_out_candidates)
-        with open("filtered_out_candidates.txt", "w") as fw:
-            fw.write(pretty_out)
-
-    # updates the columns of the DataFrame.
-    candidates["Q_align_s"] = list_start_query
-    candidates["Q_align_e"] = list_end_query
-    candidates["Start"] = list_start_subj
-    candidates["End"] = list_end_subj
-    candidates["Q_align_prot_seq"] = list_prot_query
-    candidates["Subj_align_prot_seq"] = list_prot_subj
-    candidates["Query_CDS"] = list_cds_query
-    candidates["Subj_CDS"] = list_cds_subj
-    candidates["Score"] = list_score
-    candidates["Density_Score"] = list_density_score
-
-    candidates = candidates.reindex(
-        columns=[
-            "Density_Score",
-            "ID",
-            "Chromosome",
-            "Start",
-            "End",
-            "Subj_fr",
-            "Strand",
-            "Q_ID",
-            "Q_align_s",
-            "Q_align_e",
-            "Q_fr",
-            "Q_Strand",
-            "Score",
-            "Evalue",
-            "Subj_CDS",
-            "Query_CDS",
-            "Subj_align_prot_seq",
-            "Q_align_prot_seq",
-        ]
-    )
-    # DataFrame is sorted by 'Density_Score' and saved.
-    candidates.sort_values(by="Density_Score", inplace=True, ignore_index=True)
-
-    return candidates
 
 
 def find_sec_pos(row):
@@ -3488,6 +3438,10 @@ def main():
                 f"% Precise benchmark TP: {tp}/{tp+fn} Recall={recall:.2%} Precision={precision:.2%}",
                 how=colors["bm"],
             )
+
+            ## TEMP TEMP MM
+            write(' benchmark temp --> benchmark_after_uga.tsv')
+            candidates_df.to_csv('benchmark_after_uga.tsv', sep='\t')
 
         # if benchmark:
         #     num=available_selenos.Transcript.isin(candidates_df.Chromosome).sum()
