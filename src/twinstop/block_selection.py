@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 
 import os
+import numpy as np
+from Bio.Align import substitution_matrices
 
 twinstop_libpath = os.path.dirname(os.path.realpath(__file__)) + "/data_files/"
 
@@ -93,9 +95,14 @@ def score(query_frag, subj_frag, dictionary):
     return score
 
 
-def dictionary_seleno():
+def dictionary_seleno(biopython_format=False):
     """
     Creates a dictionary of tuples with the values of the BLOSUM62 Matrix.
+
+    Parameters
+    ----------
+    biopython_format : bool, default False
+        returns a Bio.Align.substitution_matrices.Array instead of default
 
     Returns
     -------
@@ -123,5 +130,10 @@ def dictionary_seleno():
             # creation of the dictionary:
             for ik, k in enumerate(keys):
                 dictionary_sel[k] = ints[ik]
+    if biopython_format:
+        blosum = substitution_matrices.load("BLOSUM62")
+        alphabet = blosum.alphabet + 'U'
+        mdata = [  [float(dictionary_sel[(a1, a2)])   for a2 in alphabet] for a1 in alphabet]
+        return substitution_matrices.Array( alphabet=alphabet, data=np.array(mdata) )
 
     return dictionary_sel

@@ -173,7 +173,8 @@ import pickle
 import multiprocess as mp
 import numpy as np
 from datetime import datetime
-from Bio import pairwise2
+#from Bio import pairwise2
+from Bio import Align
 
 from easyterm import (
     command_line_options,
@@ -212,6 +213,7 @@ def custom_warning(message, category, filename, lineno, file=None, line=None):
 # we create the dictionary of tuples with the scores of each aminoacid alignment with each other.
 # alignment score values are based on BLOSUM62 matrix. Scores for 'U' (selenocysteine) are added.
 blosum_matrix = dictionary_seleno()
+blosum_matrix_biopython = dictionary_seleno(biopython_format=True)
 twinstop_libpath = os.path.dirname(os.path.realpath(__file__)) + "/data_files/"
 
 benchmark, debugging = False, False
@@ -1182,23 +1184,37 @@ def pairwise_alignment(extended_hits_df):
         Dataframe with gaps in the protein sequences (if alignment is improved).
     """
 
+    aligner = Align.PairwiseAligner()
+    aligner.mode='global'
+    aligner.open_gap_score = -7
+    aligner.extend_gap_score = -1
+    aligner.substitution_matrix = blosum_matrix_biopython
+
     # write('Pairwise alignment')
     for i in extended_hits_df.index:
         # -7 is the cost to open a gap, -1 is the cost to extend it.
         # pairwise2.align.global parameters:
         # d     A dictionary returns the score of any pair of characters.
         # s     Same open and extend gap penalties for both sequences.
-        alignment = pairwise2.align.globalds(
+
+        # alignment = pairwise2.align.globalds(
+        #     extended_hits_df.at[i, "Q_align_prot_seq"],
+        #     extended_hits_df.at[i, "Subj_align_prot_seq"],
+        #     blosum_matrix,
+        #     -7,
+        #     -1,
+        #     one_alignment_only=True,
+        # )
+
+        # MM updated to Bio.Align
+        alignment = aligner.align(
             extended_hits_df.at[i, "Q_align_prot_seq"],
-            extended_hits_df.at[i, "Subj_align_prot_seq"],
-            blosum_matrix,
-            -7,
-            -1,
-            one_alignment_only=True,
-        )
+            extended_hits_df.at[i, "Subj_align_prot_seq"]
+        )[0] # first alignment only
+
         # only the best scored alignment is selected.
-        extended_hits_df.at[i, "Q_align_prot_seq"] = alignment[0][0]
-        extended_hits_df.at[i, "Subj_align_prot_seq"] = alignment[0][1]
+        extended_hits_df.at[i, "Q_align_prot_seq"] = alignment[0]
+        extended_hits_df.at[i, "Subj_align_prot_seq"] = alignment[1]
 
     return extended_hits_df
 
@@ -3439,9 +3455,9 @@ def main():
                 how=colors["bm"],
             )
 
-            ## TEMP TEMP MM
-            write(' benchmark temp --> benchmark_after_uga.tsv')
-            candidates_df.to_csv('benchmark_after_uga.tsv', sep='\t')
+            # ## TEMP TEMP MM
+            # write(' benchmark temp --> benchmark_after_uga.tsv')
+            # candidates_df.to_csv('benchmark_after_uga.tsv', sep='\t')
 
         # if benchmark:
         #     num=available_selenos.Transcript.isin(candidates_df.Chromosome).sum()
