@@ -173,7 +173,8 @@ import pickle
 import multiprocess as mp
 import numpy as np
 from datetime import datetime
-#from Bio import pairwise2
+
+# from Bio import pairwise2
 from Bio import Align
 
 from easyterm import (
@@ -183,7 +184,8 @@ from easyterm import (
     CommandLineOptions,
 )
 from easybioinfo import count_coding_changes, count_coding_sites
-#from orf_tools import extend_orfs
+
+# from orf_tools import extend_orfs
 from file_chunk_iterators import (
     iterate_file_in_chunks,
     iterate_file_in_chunks_with_key,
@@ -651,15 +653,24 @@ def run_extend(chunk, path_query_file, path_subj_file):
     )
 
     # renames the PyRanges-format query columns to merge both query/subj DataFrames.
-    #query_pr = query_pr.rename(columns={"Strand": "Q_Strand"})
-    query_pr = pd.DataFrame(query_pr).rename(columns={"Strand": "Q_Strand", "Start":"Q_align_s", "End":"Q_align_e"})
+    # query_pr = query_pr.rename(columns={"Strand": "Q_Strand"})
+    query_pr = pd.DataFrame(query_pr).rename(
+        columns={"Strand": "Q_Strand", "Start": "Q_align_s", "End": "Q_align_e"}
+    )
     query_df = chunk[["ID", "Q_ID", "Q_fr"]]
     print(query_df)
-    #query_df = pd.concat([query_df, query_pr[["Q_Strand", "Query_CDS", "Q_align_prot_seq"]]], axis=1)
-    query_df = pd.concat([query_df, query_pr[["Q_Strand", "Query_CDS", "Q_align_prot_seq", "Q_align_s", "Q_align_e"]]], axis=1)
+    # query_df = pd.concat([query_df, query_pr[["Q_Strand", "Query_CDS", "Q_align_prot_seq"]]], axis=1)
+    query_df = pd.concat(
+        [
+            query_df,
+            query_pr[
+                ["Q_Strand", "Query_CDS", "Q_align_prot_seq", "Q_align_s", "Q_align_e"]
+            ],
+        ],
+        axis=1,
+    )
     query_pr = pr.PyRanges(query_df)
     print(query_pr)
-
 
     # merges both DataFrames by 'ID' column.
     joined_df = subj_pr.merge(query_pr.set_index(["ID"]), on="ID")
@@ -792,11 +803,12 @@ def query_subject_dfs(df):
 
     # write('Dividing columns into query and subject dataframes')
     # df.copy() is deep=True by default
-    #query_df = df.copy(deep=True)
+    # query_df = df.copy(deep=True)
     query_df = df[["ID", "Q_ID", "Q_align_s", "Q_align_e", "Q_fr", "Q_align_prot_seq"]]
     # drops the query-related columns.
     subj_df = df.drop(
-        columns=["Q_ID", "Q_align_s", "Q_align_e", "Q_fr", "Q_align_prot_seq"], axis=1)
+        columns=["Q_ID", "Q_align_s", "Q_align_e", "Q_fr", "Q_align_prot_seq"], axis=1
+    )
     #     ["Q_ID", "Q_align_s", "Q_align_e", "Q_fr", "Q_align_prot_seq"], axis=1
     # )
     del df
@@ -864,7 +876,7 @@ def join_dfs(chunk_df, path_subj_file, path_query_file):
         subject_df, query_df, path_subj_file, path_query_file
     )
     del subject_df, query_df
-    #query_df.drop(["Strand"], axis=1, inplace=True)
+    # query_df.drop(["Strand"], axis=1, inplace=True)
     # we need to rename query's columns before joining back the two dataframes.
     # query_df = query_df.rename(
     #     columns={"Chromosome": "Q_ID", "Start": "Q_align_s", "End": "Q_align_e"}
@@ -872,8 +884,8 @@ def join_dfs(chunk_df, path_subj_file, path_query_file):
     # joins subject and query DataFrames by ID column.
     # set_index() drop=True by default.
 
-    joined_df = subject_pr.join(query_pr.set_index('ID'), on='ID', rsuffix='_Query')
-    # joined_df = subject_df.join(query_df.set_index("ID"), on="ID")    
+    joined_df = subject_pr.join(query_pr.set_index("ID"), on="ID", rsuffix="_Query")
+    # joined_df = subject_df.join(query_df.set_index("ID"), on="ID")
     # del subject_df, query_df
     # joined_df = joined_df.reindex(
     #     columns=[
@@ -893,14 +905,18 @@ def join_dfs(chunk_df, path_subj_file, path_query_file):
     #         "Q_align_prot_seq",
     #     ]
     # )
-    #joined_df.sort_values(by="ID", inplace=True, ignore_index=True)
-    joined_df = joined_df.rename(columns={'Chromosome_Subj': 'Chromosome',
-                                          'Start_Subj': 'Start',
-                                          'End_Subj': 'End',
-                                          'Chromosome_Query': 'Q_ID',
-                                          'Start_Query': 'Q_align_s',
-                                          'End_Query': 'Q_align_e',
-                                          'Strand_Query': 'Q_Strand'})
+    # joined_df.sort_values(by="ID", inplace=True, ignore_index=True)
+    joined_df = joined_df.rename(
+        columns={
+            "Chromosome_Subj": "Chromosome",
+            "Start_Subj": "Start",
+            "End_Subj": "End",
+            "Chromosome_Query": "Q_ID",
+            "Start_Query": "Q_align_s",
+            "End_Query": "Q_align_e",
+            "Strand_Query": "Q_Strand",
+        }
+    )
 
     return joined_df
 
@@ -1012,7 +1028,11 @@ def fragmentation(postchunking_df):
     postchunking_df["Score"] = list_score
     # write('Updated DataFrame with the best scored ORFs')
 
-    return postchunking_df
+    # filtering some buggy empty fragments
+    return postchunking_df[
+        ((postchunking_df.Q_align_e - postchunking_df.Q_align_s) >= 3)
+        & ((postchunking_df.End - postchunking_df.Start) >= 3)
+    ]
 
 
 def overlapping_filter(fragments_df, n_cpu):
@@ -1051,11 +1071,11 @@ def overlapping_filter(fragments_df, n_cpu):
     )
     del qsf_score
     # creates a 'Cluster' column identifying the overlapping sequences
-    #clusters_pr = pr.PyRanges(fragments_df).cluster(strand=False, slack=0, nb_cpu=n_cpu)
+    # clusters_pr = pr.PyRanges(fragments_df).cluster(strand=False, slack=0, nb_cpu=n_cpu)
     clusters_pr = pr.PyRanges(fragments_df).cluster(use_strand=False)
     del fragments_df
-    #clusters_df = clusters_pr.as_df()
-    #del clusters_pr
+    # clusters_df = clusters_pr.as_df()
+    # del clusters_pr
     clusters_pr = (
         clusters_pr.sort_values(by="Score", ascending=False)
         .groupby("Cluster", as_index=False, observed=False)
@@ -1117,9 +1137,9 @@ def get_cds_prot_seq(
 
     # write('Converting subject and query dataframes into PyRanges objects')
     # converts into PyRanges.
-    #query_pr = pr.PyRanges(query_df)
-    #subj_pr = pr.PyRanges(subj_df)
-    #del query_df, subj_df
+    # query_pr = pr.PyRanges(query_df)
+    # subj_pr = pr.PyRanges(subj_df)
+    # del query_df, subj_df
     # write('Translating into protein')
     if CDS_sequences:
         query_pr["Query_CDS"] = query_pr.get_sequence(path=path_query_file)
@@ -1145,12 +1165,13 @@ def get_cds_prot_seq(
         # ]
         # # write('Nucleotide and protein sequences saved')
     else:
-        query_pr["Q_align_prot_seq"]  = pr.seqs.translate(
-            query_pr.get_sequence(path=path_query_file), genetic_code="1+U", cache=True)
+        query_pr["Q_align_prot_seq"] = pr.seqs.translate(
+            query_pr.get_sequence(path=path_query_file), genetic_code="1+U", cache=True
+        )
         subj_pr["Subj_align_prot_seq"] = pr.seqs.translate(
-            subj_pr.get_sequence(path=path_subj_file), genetic_code="1+U", cache=True)
+            subj_pr.get_sequence(path=path_subj_file), genetic_code="1+U", cache=True
+        )
 
-        
         # translates the CDS sequences into protein (using the 'U' for UGA-in-frame codons).
         # query_pr.Q_align_prot_seq = [
         #     translate(s, genetic_code="1+U", cache=True)
@@ -1162,8 +1183,8 @@ def get_cds_prot_seq(
         # ]
     # write('Protein sequences with Selenocysteine (U)')
     # converts into DataFrame
-    #query_df = query_pr.as_df()
-    #subj_df = subj_pr.as_df()
+    # query_df = query_pr.as_df()
+    # subj_df = subj_pr.as_df()
 
     return query_pr, subj_pr
 
@@ -1185,7 +1206,7 @@ def pairwise_alignment(extended_hits_df):
     """
 
     aligner = Align.PairwiseAligner()
-    aligner.mode='global'
+    aligner.mode = "global"
     aligner.open_gap_score = -7
     aligner.extend_gap_score = -1
     aligner.substitution_matrix = blosum_matrix_biopython
@@ -1209,8 +1230,10 @@ def pairwise_alignment(extended_hits_df):
         # MM updated to Bio.Align
         alignment = aligner.align(
             extended_hits_df.at[i, "Q_align_prot_seq"],
-            extended_hits_df.at[i, "Subj_align_prot_seq"]
-        )[0] # first alignment only
+            extended_hits_df.at[i, "Subj_align_prot_seq"],
+        )[
+            0
+        ]  # first alignment only
 
         # only the best scored alignment is selected.
         extended_hits_df.at[i, "Q_align_prot_seq"] = alignment[0]
@@ -1374,7 +1397,7 @@ def UGA_alignments(aligned_hits_df):
     if debugging:
         filtered_out_candidates = pd.DataFrame()
     aligned_hits_df.reset_index(drop=True, inplace=True)
-    
+
     for i, row in aligned_hits_df.iterrows():
         # print('\n'+'*'*200)
         # print('q: '+row["Q_align_prot_seq"])
@@ -1413,10 +1436,12 @@ def UGA_alignments(aligned_hits_df):
                     )
                     # print('U downstream query')
                     # print(f"row Q_align_prot_seq:\n {row['Q_align_prot_seq']}")
-                    row["Q_align_prot_seq"] = (row["Q_align_prot_seq"][
-                        : list_down_query[0] # + 1 #MM
-                    ] + "*" + #MM
-                                               "-" * (len(row["Q_align_prot_seq"]) - list_down_query[0] - 1))
+                    row["Q_align_prot_seq"] = (
+                        row["Q_align_prot_seq"][: list_down_query[0]]  # + 1 #MM
+                        + "*"
+                        + "-"  # MM
+                        * (len(row["Q_align_prot_seq"]) - list_down_query[0] - 1)
+                    )
                     # print(f"row Q_align_prot_seq:\n {row['Q_align_prot_seq']}")
                     # print(f"row Query_CDS:\n {row['Query_CDS']}")
                     row["Query_CDS"] = row["Query_CDS"][
@@ -1445,15 +1470,14 @@ def UGA_alignments(aligned_hits_df):
                         "-"
                     )
                     row["Q_align_prot_seq"] = (
-                        "-" * (list_up_query[-1]) #MM + 1)
-                        +'*' #MM
-                        + row["Q_align_prot_seq"][list_up_query[-1]+1:]
+                        "-" * (list_up_query[-1])  # MM + 1)
+                        + "*"  # MM
+                        + row["Q_align_prot_seq"][list_up_query[-1] + 1 :]
                     )
                     # print(f"row Q_align_prot_seq:\n {row['Q_align_prot_seq']}")
                     # print(f"row Query_CDS:\n {row['Query_CDS']}")
                     row["Query_CDS"] = row["Query_CDS"][
-                        (list_up_query[-1] # + 1 #MM
-                         - gaps_up) * 3 :
+                        (list_up_query[-1] - gaps_up) * 3 :  # + 1 #MM
                     ]
                     # print(f"row Query_CDS:\n {row['Query_CDS']}")
 
@@ -1469,10 +1493,12 @@ def UGA_alignments(aligned_hits_df):
                     # print(f'subj_cd: {subj_cd}')
                     # print('U downstream subject')
                     # print(f"row Subj_align_prot_seq:\n {row['Subj_align_prot_seq']}")
-                    row["Subj_align_prot_seq"] = (row["Subj_align_prot_seq"][
-                        : list_down_subj[0] # + 1 #MM
-                    ] + '*'+  #MM
-                    "-" * (len(row["Subj_align_prot_seq"]) - list_down_subj[0] - 1))
+                    row["Subj_align_prot_seq"] = (
+                        row["Subj_align_prot_seq"][: list_down_subj[0]]  # + 1 #MM
+                        + "*"
+                        + "-"  # MM
+                        * (len(row["Subj_align_prot_seq"]) - list_down_subj[0] - 1)
+                    )
                     # print(f"row Subj_align_prot_seq:\n {row['Subj_align_prot_seq']}")
                     # print(f"row Subj_CDS:\n {row['Subj_CDS']}")
                     row["Subj_CDS"] = row["Subj_CDS"][
@@ -1488,14 +1514,14 @@ def UGA_alignments(aligned_hits_df):
                     # print(f"row Subj_CDS:\n {row['Subj_CDS']}")
 
                 ### TEMP TEMP MM
-                list_bug=[] #809, 884, 869, 839, 854, 824, 779, 794, 1067, 461, 472, 495, 483, 1381, 932, 966, 149, 1229, 1231, 1225, 1233, 278]
+                list_bug = (
+                    []
+                )  # 809, 884, 869, 839, 854, 824, 779, 794, 1067, 461, 472, 495, 483, 1381, 932, 966, 149, 1229, 1231, 1225, 1233, 278]
                 if row["ID"] in (list_bug):
-                    write(row, how='blue')
-                    write(row.Subj_align_prot_seq.replace('-', ''), how='blue,reverse')
+                    write(row, how="blue")
+                    write(row.Subj_align_prot_seq.replace("-", ""), how="blue,reverse")
 
                 if len(list_up_subj) != 0:
-
-
                     subj_cu = (
                         len(
                             row["Subj_align_prot_seq"][: list_up_subj[-1]].replace(
@@ -1504,22 +1530,21 @@ def UGA_alignments(aligned_hits_df):
                         )
                         # + 1
                     ) * 3
-                    #print(f'subj_cu: {subj_cu}')
+                    # print(f'subj_cu: {subj_cu}')
                     # print('U upstream subject')
                     # print(f"row Subj_align_prot_seq:\n {row['Subj_align_prot_seq']}")
                     gaps_up = row["Subj_align_prot_seq"][: list_up_subj[-1] + 1].count(
                         "-"
                     )
                     row["Subj_align_prot_seq"] = (
-                        "-" * (list_up_subj[-1]) #MM + 1)
-                        +'*' # MM
-                        + row["Subj_align_prot_seq"][list_up_subj[-1]+1:]
+                        "-" * (list_up_subj[-1])  # MM + 1)
+                        + "*"  # MM
+                        + row["Subj_align_prot_seq"][list_up_subj[-1] + 1 :]
                     )
                     # print(f"row Subj_align_prot_seq:\n {row['Subj_align_prot_seq']}")
                     # print(f"row Subj_CDS:\n {row['Subj_CDS']}")
                     row["Subj_CDS"] = row["Subj_CDS"][
-                        (list_up_subj[-1] #+ 1 #MM
-                         - gaps_up) * 3 :
+                        (list_up_subj[-1] - gaps_up) * 3 :  # + 1 #MM
                     ]
                     # print(f"row Subj_CDS:\n {row['Subj_CDS']}")
 
@@ -1605,8 +1630,10 @@ def UGA_alignments(aligned_hits_df):
 
                 ### TEMP TEMP MM
                 if row["ID"] in (list_bug):
-                    write(row, how='magenta')
-                    write(row.Subj_align_prot_seq.replace('-', ''), how='magenta,reverse')
+                    write(row, how="magenta")
+                    write(
+                        row.Subj_align_prot_seq.replace("-", ""), how="magenta,reverse"
+                    )
 
                 prot_seq_query = ""
                 prot_seq_subj = ""
@@ -1887,8 +1914,6 @@ def UGA_alignments(aligned_hits_df):
 #     return row
 
 
-
-
 def find_sec_pos(row):
     # sec_annot_df = pd.DataFrame(columns=['ID', 'Chromosome', 'Start', 'End'])
     index_u = UGA(row["Q_align_prot_seq"], row["Subj_align_prot_seq"])
@@ -2054,9 +2079,7 @@ def dN_dS(row):
     return u_dN_dS, d_dN_dS
 
 
-def run_blastp(
-    selenocandidates_df, db_file, n_cpu, blastp_outfile, fasta_prot_seq
-):
+def run_blastp(selenocandidates_df, db_file, n_cpu, blastp_outfile, fasta_prot_seq):
     """
     This function runs blastp. Useful to annotate the candidates
 
@@ -2128,9 +2151,7 @@ def run_blastp(
     uniprot_IDs_df = uniprot_IDs_df.groupby("ID", as_index=False, observed=False).agg(
         {"Annot_Title": join_titles}
     )
-    selenocandidates_df = selenocandidates_df.merge(
-        uniprot_IDs_df, on="ID"
-    )
+    selenocandidates_df = selenocandidates_df.merge(uniprot_IDs_df, on="ID")
 
     os.remove(blastp_outfile)
     return selenocandidates_df
@@ -2315,7 +2336,6 @@ def pretty_output(df):
 
         # write(row)
         for index, x in enumerate(row["Q_align_prot_seq"]):
-
             codon = subj_aligned_cds[index * 3 : index * 3 + 3]
             cds_string1 += codon[0].lower()
             cds_string2 += codon[1].lower()
@@ -2502,8 +2522,16 @@ def make_outputs(
         #                                        row['Subj_align_prot_seq'],
         #                                        row['Q_align_prot_seq'])
         prefix = row["Run_info"] + "," if "Run_info" in row else ""
-        title_q = f">{prefix}TwS.{row['ID']} {row['Q_ID']}[{row['Q_align_s']}:{row['Q_align_e']}] Annotation: {str(row['Annot_Title'])}\n" if "Annot_Title" in selenocandidates_df else f">{prefix}TwS.{row['ID']} {row['Q_ID']}[{row['Q_align_s']}:{row['Q_align_e']}]\n"
-        title_s = f">{prefix}TwS.{row['ID']} {row['Chromosome']}[{row['Start']}:{row['End']}] Annotation: {str(row['Annot_Title'])}\n" if "Annot_Title" in selenocandidates_df else f">{prefix}TwS.{row['ID']} {row['Chromosome']}[{row['Start']}:{row['End']}]\n"
+        title_q = (
+            f">{prefix}TwS.{row['ID']} {row['Q_ID']}[{row['Q_align_s']}:{row['Q_align_e']}] Annotation: {str(row['Annot_Title'])}\n"
+            if "Annot_Title" in selenocandidates_df
+            else f">{prefix}TwS.{row['ID']} {row['Q_ID']}[{row['Q_align_s']}:{row['Q_align_e']}]\n"
+        )
+        title_s = (
+            f">{prefix}TwS.{row['ID']} {row['Chromosome']}[{row['Start']}:{row['End']}] Annotation: {str(row['Annot_Title'])}\n"
+            if "Annot_Title" in selenocandidates_df
+            else f">{prefix}TwS.{row['ID']} {row['Chromosome']}[{row['Start']}:{row['End']}]\n"
+        )
 
         if IsQueryCDSeqReturned:
             output_cds_q += title_q
@@ -2705,9 +2733,9 @@ def regression_filter(candidates, lr_filepath, ncpus):
         }
     )
 
-    test_ml[["U+1", "U+2", "U+3", "U+4", "U+5", "U-1", "U-2", "U-3", "U-4", "U-5"]] = (
-        replaced_col
-    )
+    test_ml[
+        ["U+1", "U+2", "U+3", "U+4", "U+5", "U-1", "U-2", "U-3", "U-4", "U-5"]
+    ] = replaced_col
     # test_ml.rename(columns={'dN_dS_up': 'dN/dS_up', 'dN_dS_down': 'dN/dS_down'}, inplace=True)
 
     # X = test_ml.drop(['true_positive'], axis=1)
@@ -3497,7 +3525,7 @@ def main():
         )
 
         selenocandidates_df.to_csv(
-            path_or_buf='selenocandidates.no_filter.tsv', sep="\t", index=False
+            path_or_buf="selenocandidates.no_filter.tsv", sep="\t", index=False
         )
 
         if opt["model"] == "d":
@@ -3566,7 +3594,9 @@ def main():
     else:
         write("\n### Skipping PHASE 8 because not requested...")
 
-    if opt['ann'] and ( not os.path.exists(path_selenocandidates_annotated_outfile) or n_section < 9 ):
+    if opt["ann"] and (
+        not os.path.exists(path_selenocandidates_annotated_outfile) or n_section < 9
+    ):
         write(description_of_phases[8])
         selenocandidates_df = run_blastp(
             selenocandidates_df,
@@ -3583,7 +3613,7 @@ def main():
         )
         # write(f'\nNº of unique subject transcripts: {len(candidates_df.Chromosome.unique())}')
         # write(f'\nTP: {available_selenos.Transcript.isin(candidates_df.Chromosome).sum()}/{len(available_selenos)}')
-    elif opt['ann'] and os.path.exists(path_selenocandidates_annotated_outfile):
+    elif opt["ann"] and os.path.exists(path_selenocandidates_annotated_outfile):
         del selenocandidates_df
         selenocandidates_df = pd.read_csv(
             path_selenocandidates_annotated_outfile, sep="\t", header=0, index_col=False
