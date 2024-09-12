@@ -3055,6 +3055,15 @@ def main():
     benchmark = opt["benchmark"]
     debugging = opt["debug"]
 
+    # dealing with model choice for regression filter
+    model_shortcut_to_weight_class = {"d": "128", "p": "1", "s": "1000"}
+    model_n = model_shortcut_to_weight_class.get(opt["model"], opt["model"])
+    lr_filepath = twinstop_libpath + "lr_selenoproteins." + model_n + ".txt"
+    if not model_n.isdigit() or not os.path.exists(lr_filepath):
+        raise Exception(
+            "ERROR invalid -model option!: only one of d, p, s (or a valid weight indicating a builtin model) are accepted"
+        )
+
     if benchmark:
         # read table of the Selenoprofiles4 selenocysteines prediction for subject (control selenoproteins)
         sp4_subj_gff = pd.read_csv(
@@ -3527,13 +3536,6 @@ def main():
         selenocandidates_df.to_csv(
             path_or_buf="selenocandidates.no_filter.tsv", sep="\t", index=False
         )
-
-        if opt["model"] == "d":
-            lr_filepath = twinstop_libpath + "logistic_regression_model.def.pkl"
-        elif opt["model"] == "p":
-            lr_filepath = twinstop_libpath + "logistic_regression_model.pre.pkl"
-        elif opt["model"] == "s":
-            lr_filepath = twinstop_libpath + "logistic_regression_model.sen.pkl"
 
         lr_preds, y = regression_filter(selenocandidates_df, lr_filepath, n_cpu)
         selenocandidates_df = selenocandidates_df[lr_preds]
