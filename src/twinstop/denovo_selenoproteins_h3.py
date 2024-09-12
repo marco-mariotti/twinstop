@@ -2058,21 +2058,21 @@ def dN_dS(row):
     tupla_dN_dS_u = count_coding_sites(query_aligned_cds[: index_u * 3])
     tupla_dN_dS_d = count_coding_sites(query_aligned_cds[(index_u + 1) * 3 :])
     # if non-synonymous changes == 0:
-    udN = "NA" if tupla_dN_dS_u[0] == 0 else changes_dN_dS_u[0] / tupla_dN_dS_u[0]
+    udN = np.nan if tupla_dN_dS_u[0] == 0 else changes_dN_dS_u[0] / tupla_dN_dS_u[0]
     # if synonymous changes = 0.
-    udS = "NA" if tupla_dN_dS_u[1] == 0 else changes_dN_dS_u[1] / tupla_dN_dS_u[1]
+    udS = np.nan if tupla_dN_dS_u[1] == 0 else changes_dN_dS_u[1] / tupla_dN_dS_u[1]
 
-    ddN = "NA" if tupla_dN_dS_d[0] == 0 else changes_dN_dS_d[0] / tupla_dN_dS_d[0]
-    ddS = "NA" if tupla_dN_dS_d[1] == 0 else changes_dN_dS_d[1] / tupla_dN_dS_d[1]
+    ddN = np.nan if tupla_dN_dS_d[0] == 0 else changes_dN_dS_d[0] / tupla_dN_dS_d[0]
+    ddS = np.nan if tupla_dN_dS_d[1] == 0 else changes_dN_dS_d[1] / tupla_dN_dS_d[1]
 
     u_dN_dS = (
-        "NA"
-        if (udN == 0 or udN == "NA" or udS == 0 or udS == "NA")
+        np.nan
+        if (udN == 0 or udN == np.nan or udS == 0 or udS == np.nan)
         else round(udN / udS, 4)
     )
     d_dN_dS = (
-        "NA"
-        if (ddN == 0 or ddN == "NA" or ddS == 0 or ddS == "NA")
+        np.nan
+        if (ddN == 0 or ddN == np.nan or ddS == 0 or ddS == np.nan)
         else round(ddN / ddS, 4)
     )
 
@@ -2665,13 +2665,13 @@ def regression_filter(candidates, lr_filepath, ncpus):
             ~candidates["dN_dS_up"].isna(), maxdnds
         )
         candidates["dN_dS_up"] = candidates["dN_dS_up"].where(
-            candidates["dN_dS_up"] <= maxdnds, maxdnds
+            candidates["dN_dS_up"] < maxdnds, maxdnds
         )
         candidates["dN_dS_down"] = candidates["dN_dS_down"].where(
             ~candidates["dN_dS_down"].isna(), maxdnds
         )
         candidates["dN_dS_down"] = candidates["dN_dS_down"].where(
-            candidates["dN_dS_down"] <= maxdnds, maxdnds
+            candidates["dN_dS_down"] < maxdnds, maxdnds
         )
         # print(candidates['dN_dS_up'].isnull().values.any())
         # print(candidates['dN_dS_down'].isnull().values.any())
