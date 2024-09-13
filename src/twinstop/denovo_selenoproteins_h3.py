@@ -59,8 +59,10 @@ full_help = """### Advanced usage:
 -timeout <float>   Sets the maximum time for the execution of a pairwise alignment (phase 5).
                    The alignments exceeding the timeout are computed using MAFFT instead. Default: 2.0
 # Developer options
--debug <bool>     Creates files with all filtered and filtered_out candidates for filtering phases: 3, 4, 6, 7
--benchmark <bool> Developer option; activates benchmarking. See details with: twinstop -h benchmark
+-debug <bool>         Creates files with all filtered and filtered_out candidates for filtering phases: 3, 4, 6, 7
+-benchmark <bool>     Activates benchmarking. See details with: twinstop -h benchmark
+-training  <list>     Train new regression filters on your unfiltered results. See details: twinstop -h training
+-custom_model <list>  Provides a custom regressor filter in form of two files: a scaler and a regressor
 """
 
 titles_of_phases = {
@@ -104,32 +106,58 @@ phases_help = """\n### Description of phases\n""" + "\n".join(
     ]
 )
 
+
 benchmark_help = """
 ### Benchmark usage: these are required if -benchmark is active
 # Benchmarking is performed counting how many of the selenoproteins expected on the subject are recovered
-# Note: it is generous, in the sense that only selenoprotein families that are expected in both subject 
-#  and query and counted, since they are the only ones that twinstop can, at best, predict.
-# Analogously, some selenoprotein families are always excluded since they have a terminal Sec, which
-#  cannot be predicted by the conservation approach of twinstop.
 
--benchmark_subject_gff <str>  path to GFF-like file describing selenoproteins expected in the subject
-                              NOTE: coordinates are pyranges-like: 0-based, Start included and End excluded
-                              Format: Columns= ['Chromosome', 'source', 'feature', 'sec_start', 'sec_end',
-                                                  'score', 'strand', 'frame', 'attribute', 'subj_id']
-                              Each line must contain only the Selenocysteine residues of the expected selenoproteins
-                              The attribute is selenoprofiles-like: Sec1:TR.70.selenocysteine  (here, TR is the sel_family)
+-benchmark_subject_gff <list>  path(s) to GFF-like file(s) describing selenoproteins expected in the subject
+                               NOTE: coordinates are pyranges-like: 0-based, Start included and End excluded
+                               Format: without header, with Columns= ['Chromosome', 'source', 'feature', 
+                               'sec_start', 'sec_end', 'score', 'strand', 'frame', 'attribute', 'subj_id']
+                               Each line must contain only the Selenocysteine residues of the expected selenoproteins
+                               The attribute is selenoprofiles-like: Sec1:TR.70.selenocysteine  (here, TR is the sel_family)
 
--benchmark_query <str>  path to tabular file describing selenoproteins expected in query. 
+-benchmark_only_homologs <bool>  if active, only selenoprotein families that are expected in both subject and
+                                 query are counted, since they are the only ones that twinstop can, at best, predict.
+                                 These are identified by matching the 'sel_family' in query and subject expected genes.
+                                 Requires -benchmark_query
+
+-benchmark_query <str>  path to tabular file describing selenoproteins expected in query.
                         Format: no header; fields: ['Chromosome', 'sel_family', 'id', 'subj_id']
 
--unavailable_families <list>  list of selenoprotein families that are always excluded from benchmarking. 
-                              These have C-terminal Sec residues. Default: SelK SelKi SelO SelS TR
+-unavailable_families <list>  selenoprotein families omitted from benchmarking. The rationale of this option is to exclude
+                              selenoproteins with C-terminal Sec residues, since conservation can't be used to find them.
+                              A list of family names can be provided.
+                              If instead "True" is provided, this is used: SelK SelKi SelO SelS TR
+"""
+
+
+training_help = """
+### Training usage:
+# If -training is active, the usual twinstop workflow is not run; so, the typical compulsory options are not read.
+# Instead, a table is provided with unfiltered selenoprotein predictions, as well as set of expected selenoproteins.
+# Thus, a set of regression filters are trained, varying the tradeoff between sensitivity and precision.
+# The filters, a scaler to preprocess data, and a table of the resulting benchmark are written to the output folder.
+
+-training <list>  Provide one or more unfiltered twinstop output(s), i.e. selenocandidates.no_filter.tsv files
+
+-benchmark_subject_gff <list>  path(s) to GFF-like file(s) describing selenoproteins expected in the subject
+                               NOTE: coordinates are pyranges-like: 0-based, Start included and End excluded
+                               Format: without header, with Columns= ['Chromosome', 'source', 'feature', 
+                               'sec_start', 'sec_end', 'score', 'strand', 'frame', 'attribute', 'subj_id']
+                               Each line must contain only the Selenocysteine residues of the expected selenoproteins
+
+-training_weights <list>  list of weights for the True class which are tested during training; a model is built for each.
+                          Higher values result in higher sensitivity but lower precision.
+                          Default: 1 2 3 7 10 25 50 75 100 128 250 500 750 1000
 """
 
 advanced_help_dict = {
     "phases": phases_help,
     "benchmark": benchmark_help,
     "full": full_help,
+    "training": training_help,
 }
 
 def_opt = {
@@ -150,19 +178,25 @@ def_opt = {
     "ann_db": "",
     "force": 1000,
     "ann": False,
-    "benchmark_subject_gff": "",
+    "benchmark_subject_gff": [],
     "benchmark_query": "",
-    "unavailable_families": ["SelK", "SelKi", "SelO", "SelS", "TR"],
+    "benchmark_only_homologs": False,
+    "unavailable_families": [],
     "benchmark": False,
+    "training": [],
+    "training_weights": [
+        x for x in map(str, [1, 2, 3, 7, 10, 25, 50, 75, 100, 128, 250, 500, 750, 1000])
+    ],
     "debug": False,
     "timeout": 2.0,
     "time_mem": False,
     "model": "d",
+    "custom_model": [],
 }
 
 
 # packages:
-import os
+import os, sys
 import pyranges as pr
 import subprocess
 import shlex
@@ -2655,10 +2689,8 @@ def time_mem_usage(initial_time):
     write(f"Current memory use: {current_memory}")
 
 
-def regression_filter(candidates, lr_filepath, ncpus):
-    scaler_filepath = twinstop_libpath + "scaler.pkl"
+def regression_preprocess(candidates, maxdnds=3):
     if candidates.isnull().values.any():
-        maxdnds = 3
         # print(candidates['dN_dS_up'].isnull().values.any())
         # print(candidates['dN_dS_down'].isnull().values.any())
         candidates["dN_dS_up"] = candidates["dN_dS_up"].where(
@@ -2744,6 +2776,12 @@ def regression_filter(candidates, lr_filepath, ncpus):
         columns=["U+1", "U+2", "U+3", "U+4", "U+5", "U-1", "U-2", "U-3", "U-4", "U-5"],
         dtype="int",
     )
+    return X
+
+
+def regression_filter(candidates, lr_filepath, scaler_filepath, ncpus):
+    X = regression_preprocess(candidates)
+
     if benchmark:
         y = candidates["true_positive"]
     else:
@@ -2992,11 +3030,12 @@ def main():
     opt = command_line_options(def_opt, help_msg, advanced_help_msg=advanced_help_dict)
     # os.path.abspath(relative/absolute path) gets the absolute path of a file
     q_file = os.path.abspath(opt["q"])
-    # checks if query file exists
-    check_file_presence(q_file, "Given path for query file does not exist")
     subj_file = os.path.abspath(opt["s"])
-    # checks if subject file exists
-    check_file_presence(subj_file, "Given path for subject file does not exist")
+
+    if not opt["training"]:
+        # checks if subject file exists,     # checks if query file exists
+        check_file_presence(q_file, "Given path for query file does not exist")
+        check_file_presence(subj_file, "Given path for subject file does not exist")
 
     output_folder = opt["o"]
     # if output folder does not exist, it is created
@@ -3056,31 +3095,54 @@ def main():
     debugging = opt["debug"]
 
     # dealing with model choice for regression filter
-    model_shortcut_to_weight_class = {"d": "128", "p": "1", "s": "1000"}
-    model_n = model_shortcut_to_weight_class.get(opt["model"], opt["model"])
-    lr_filepath = twinstop_libpath + "lr_selenoproteins." + model_n + ".txt"
-    if not model_n.isdigit() or not os.path.exists(lr_filepath):
-        raise Exception(
-            "ERROR invalid -model option!: only one of d, p, s (or a valid weight indicating a builtin model) are accepted"
+    if opt["custom_filter"]:
+        if len(opt["custom_filter"]) != 2:
+            raise Exception(
+                "-custom_filter: this option requires two arguments, a pickled scaler and a pickled regressor!"
+            )
+        scaler_filepath, lr_filepath = opt["custom_filter"]
+
+    else:
+        model_shortcut_to_weight_class = {"d": "128", "p": "1", "s": "1000"}
+        model_n = model_shortcut_to_weight_class.get(opt["model"], opt["model"])
+        lr_filepath = twinstop_libpath + "lr_selenoproteins." + model_n + ".txt"
+        if not model_n.isdigit() or not os.path.exists(lr_filepath):
+            raise Exception(
+                "ERROR invalid -model option!: only one of d, p, s (or a valid weight indicating a builtin model) are accepted"
+            )
+        scaler_filepath = twinstop_libpath + "scaler.pkl"
+
+    if benchmark or opt["training"]:
+        write(
+            f"\nReading ground truth (expected selenoproteins) from file(s): {' '.join(opt['benchmark_subject_gff'])}"
         )
 
-    if benchmark:
         # read table of the Selenoprofiles4 selenocysteines prediction for subject (control selenoproteins)
-        sp4_subj_gff = pd.read_csv(
-            opt["benchmark_subject_gff"], sep="\t", header=None, index_col=False
+        sp4_subj_gff = pd.concat(
+            [
+                pd.read_csv(
+                    ffile,
+                    sep="\t",
+                    header=None,
+                    index_col=False,
+                    names=[
+                        "Chromosome",
+                        "source",
+                        "feature",
+                        "sec_start",
+                        "sec_end",
+                        "score",
+                        "strand",
+                        "frame",
+                        "attribute",
+                        "subj_id",
+                    ],
+                )
+                for ffile in opt["benchmark_subject_gff"]
+            ],
+            ignore_index=True,
         )
-        sp4_subj_gff.columns = [
-            "Chromosome",
-            "source",
-            "feature",
-            "sec_start",
-            "sec_end",
-            "score",
-            "strand",
-            "frame",
-            "attribute",
-            "subj_id",
-        ]
+
         sp4_prediction_subj = pd.DataFrame()
         sp4_prediction_subj["Transcript"] = sp4_subj_gff.Chromosome
         sp4_prediction_subj[["Sel_family", "n"]] = sp4_subj_gff.apply(
@@ -3091,6 +3153,148 @@ def main():
         sp4_prediction_subj["Subj_ID"] = sp4_subj_gff.subj_id
         # sp4_prediction_subj = pd.read_table(opt['sp4_prediction_subj'], sep='\t', header=None,
         #                                     names=["Transcript", "Sel_family", "n", "Subj_ID"], index_col=False)
+
+    if opt["training"]:
+        from sklearn.preprocessing import StandardScaler
+        from sklearn.model_selection import train_test_split
+        from sklearn.linear_model import LogisticRegression
+
+        write("\n#### -training workflow ####")
+        table_list = []
+        for ffile in opt["training"]:
+            write(f"Reading unfiltered twinstop prediction file: {ffile}")
+            check_file_presence(ffile, "-training file")
+            table_list.append(pd.read_table(ffile))
+        training_db = pd.concat(table_list)
+        del table_list
+
+        # removing redundancy: keep just one identical gene (identified by Sec position). Choose at random which to keep
+        nrows = len(training_db)
+        training_db = training_db.sample(frac=1, random_state=42)
+        training_db = training_db.drop_duplicates(
+            subset=["Chromosome", "sec_start", "sec_end"]
+        ).reset_index(drop=True)
+        write("")
+        if len(training_db) != nrows:
+            write(
+                f"Removed {nrows-len(training_db)} genes with identical Sec positions"
+            )
+        write(f"Training data consists of {len(training_db)} selenoprotein genes")
+
+        # Ensure unique IDs
+        if training_db.ID.duplicated().any():
+            training_db["ID"] = range(1, len(training_db) + 1)
+
+        # find the TP, this are the target
+        true_positives = training_db[
+            ["ID", "Chromosome", "sec_start", "sec_end"]
+        ].merge(
+            sp4_subj_gff[["Chromosome", "sec_start", "sec_end"]],
+            on=["Chromosome", "sec_start", "sec_end"],
+            how="inner",
+        )
+        training_db["true_positive"] = training_db.ID.isin(true_positives.ID)
+        y = training_db["true_positive"]
+
+        # how many of the expected selenoproteins are simply not present in the training DB?
+        universal_false_negatives = (
+            training_db[["ID", "Chromosome", "sec_start", "sec_end"]]
+            .merge(
+                sp4_subj_gff[["Chromosome", "sec_start", "sec_end"]],
+                on=["Chromosome", "sec_start", "sec_end"],
+                how="outer",
+            )
+            .ID.isnull()
+            .sum()
+        )
+        write(f"\nNumber of positives: {y.sum()}")
+        write(
+            f"Number of universal false negatives (i.e. missing from training data altogether): {universal_false_negatives}"
+        )
+
+        # transform column names, fill nas, categorize amino acids...
+        training_db = regression_preprocess(training_db)
+
+        # writing to file, including Y column
+        training_filepath = output_folder + "/training_data.tsv"
+        write(f"\nWriting final training data used to file: {training_filepath}")
+        pd.concat([y, training_db], axis=1).to_csv(
+            training_filepath, sep="\t", index=False
+        )
+
+        # fit, write scaler
+        scaler = StandardScaler()
+        scaler.fit(
+            training_db
+        )  # computes the mean and std to be used for later scaling
+
+        X_train, X_test, y_train, y_test = train_test_split(
+            training_db, y, train_size=0.2
+        )
+        X_train_transformed = scaler.transform(X_train)
+        X_test_transformed = scaler.transform(X_test)
+
+        # commencing regression and benchmarking, varying weight of True
+        df = pd.DataFrame(
+            columns=[
+                "True_weight",
+                "tn",
+                "fp",
+                "fn",
+                "tp",
+                "precision",
+                "sensitivity_regression",
+                "sensitivity_global",
+            ]
+        )
+        for x in map(int, opt["training_weights"]):
+            lr = LogisticRegression(class_weight={False: 1, True: x}, max_iter=3000)
+            lr.fit(X_train_transformed, y_train)
+            lr_preds = lr.predict(X_test_transformed)
+            lr_filepath = output_folder + "/lr_selenoproteins." + str(x) + ".pkl"
+            with open(lr_filepath, "wb") as f:
+                pickle.dump(lr, f)
+            tn_ml, fp_ml, fn_ml, tp_ml = confusion_matrix(y_test, lr_preds).ravel()
+
+            write(f"\nTrue class weight: {x}")
+            write(f"TN={tn_ml:<10} FP={fp_ml:<10} FN={fn_ml:<10} TP={tp_ml:<10}")
+            # print(f'TN, FP, FN, TP = {map(int, list(confusion_matrix(y_test, lr_preds).ravel()))}')
+            precision = tp_ml / (tp_ml + fp_ml)
+            sensitivity_regr = tp_ml / (tp_ml + fn_ml)
+            sensitivity_global = tp_ml / (tp_ml + fn_ml + universal_false_negatives)
+            write(
+                f"Precision: {precision:.2%}, Sensitivity: {sensitivity_regr:.2%} (regression) {sensitivity_global:.2%} (global)"
+            )
+            df.loc[df.shape[0]] = [
+                x,
+                tn_ml,
+                fp_ml,
+                fn_ml,
+                tp_ml,
+                precision,
+                sensitivity_regr,
+                sensitivity_global,
+            ]
+
+        training_benchmarking_table_filepath = output_folder + "/training_benchmark.tsv"
+        write(
+            f"\nWriting table with benchmarking results: {training_benchmarking_table_filepath}"
+        )
+        df.to_csv(
+            path_or_buf=training_benchmarking_table_filepath, sep="\t", index=False
+        )
+
+        scaler_filepath = output_folder + "/scaler.pkl"
+        write(f"\nWriting pickled sklearn scaler to file: {scaler_filepath}")
+        with open(scaler_filepath, "wb") as f:
+            pickle.dump(scaler, f)
+        write(
+            f"Writing pickled regressor filters to files: {output_folder+'/lr_selenoproteins.*.pkl'}"
+        )
+
+        sys.exit()
+
+    if benchmark:
         sp4_prediction_query = pd.read_table(
             opt["benchmark_query"],
             sep="\t",
@@ -3098,6 +3302,7 @@ def main():
             names=["Transcript", "Sel_family", "n", "Query_ID"],
             index_col=False,
         )
+
         # I want to get rid of the selenoprotein families which are unreachable for this script (terminal selenocysteines)
         # selenos_annot_query = pd.DataFrame(sp4_prediction_query.Name.str.split(n=3, pat=".").to_list(),
         #                                    columns=['Sel_family', 'Nº', 'Stop_codon', 'rest'])
@@ -3105,34 +3310,44 @@ def main():
         # selenos_annot_query['Transcript'] = sp4_prediction_query.Transcript
         # we compare subject transcripts with subject SP4 prediction subtracting the selenofamilies not present in the
         # query SP4 prediction and those selenofamilies which can not be detected using Twinstop.
-        selenos_annot = sp4_prediction_subj[
-            sp4_prediction_subj.Sel_family.isin(sp4_prediction_query.Sel_family)
-        ]
-        if selenos_annot.shape[0] != sp4_prediction_subj.shape[0]:
-            unpresent_sel = sp4_prediction_subj[
-                ~sp4_prediction_subj.Sel_family.isin(sp4_prediction_query.Sel_family)
+        if opt["benchmark_only_homologs"]:
+            selenos_annot = sp4_prediction_subj[
+                sp4_prediction_subj.Sel_family.isin(sp4_prediction_query.Sel_family)
             ]
-            write(
-                f"For benchmark, omitting selenoprotein families not present in query: {len(unpresent_sel)} belonging to families {' '.join(unpresent_sel.Sel_family.drop_duplicates())}",
-                how=colors["bm"],
-            )
+            if selenos_annot.shape[0] != sp4_prediction_subj.shape[0]:
+                unpresent_sel = sp4_prediction_subj[
+                    ~sp4_prediction_subj.Sel_family.isin(
+                        sp4_prediction_query.Sel_family
+                    )
+                ]
+                write(
+                    f"For benchmark, omitting selenoprotein families not present in query: {len(unpresent_sel)} belonging to families {' '.join(unpresent_sel.Sel_family.drop_duplicates())}",
+                    how=colors["bm"],
+                )
+
         # deletes a Python variable (empthy memory)
         del sp4_prediction_subj, sp4_prediction_query
 
         # # I want to get rid of the selenoprotein families which are unreachable for this script (terminal selenocysteines)
-        # unavailable_Sel_families = opt["unavailable_families"]
-        # # keeps the rest of selenos
-        # available_selenos = selenos_annot[
-        #     ~selenos_annot.Sel_family.isin(unavailable_Sel_families)
-        # ]
-        # if available_selenos.shape[0] != selenos_annot.shape[0]:
-        #     unavailable_sel = selenos_annot[
-        #         selenos_annot.Sel_family.isin(unavailable_Sel_families)
-        #     ]
-        #     write(
-        #         f"Unavailable Selenoprotein families predicted by Selenoprofiles 4:\n\n{unavailable_sel}"
-        #     )
-        available_selenos = selenos_annot.copy()
+        if opt["unavailable_families"]:
+            unavailable_Sel_families = opt["unavailable_families"]
+            if unavailable_Sel_families == "True":
+                unavailable_Sel_families = (["SelK", "SelKi", "SelO", "SelS", "TR"],)
+            # keeps the rest of selenos
+            removed_unavailable = selenos_annot.Sel_family.isin(
+                unavailable_Sel_families
+            )
+            if removed_unavailable.any():
+                removed_which_fams = selenos_annot[
+                    removed_unavailable
+                ].Sel_family.drop_duplicates()
+                available_selenos = selenos_annot[~removed_unavailable].copy()
+                write(
+                    f"For benchmark, unavailable selenoproteins omitted: {removed_unavailable.sum()} genes belonging to families {' '.join(removed_which_fams)} "
+                )
+        else:
+            available_selenos = selenos_annot.copy()
+
         write(
             f'Subject selenoproteins for benchmark: {len(available_selenos)} belonging to families {" ".join(available_selenos.Sel_family.drop_duplicates())}',
             how=colors["bm"],
@@ -3537,7 +3752,9 @@ def main():
             path_or_buf="selenocandidates.no_filter.tsv", sep="\t", index=False
         )
 
-        lr_preds, y = regression_filter(selenocandidates_df, lr_filepath, n_cpu)
+        lr_preds, y = regression_filter(
+            selenocandidates_df, lr_filepath, scaler_filepath, n_cpu
+        )
         selenocandidates_df = selenocandidates_df[lr_preds]
         selenocandidates_df.sort_values(
             by="Density_Score", inplace=True, ignore_index=True, ascending=False
