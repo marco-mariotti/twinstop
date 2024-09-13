@@ -3105,7 +3105,7 @@ def main():
     else:
         model_shortcut_to_weight_class = {"d": "128", "p": "1", "s": "1000"}
         model_n = model_shortcut_to_weight_class.get(opt["model"], opt["model"])
-        lr_filepath = twinstop_libpath + "lr_selenoproteins." + model_n + ".txt"
+        lr_filepath = twinstop_libpath + "lr_selenoproteins." + model_n + ".pkl"
         if not model_n.isdigit() or not os.path.exists(lr_filepath):
             raise Exception(
                 "ERROR invalid -model option!: only one of d, p, s (or a valid weight indicating a builtin model) are accepted"
