@@ -15,7 +15,7 @@ That is, uninstall conda; install mamba; create a new environment; then run the 
 # Usage
 To see usage, run::
 
-  twinstop -h
+  `twinstop -h`
 
 
 # Authors
